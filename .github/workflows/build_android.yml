@@ -60,4 +60,9 @@ jobs:
           cd ./android
           export JAVA_HOME=$JAVA_HOME_17_X64
           ./gradlew assembleDebug
+      - name: Upload build outputs (APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpd_capullo-${{ github.sha }}
+          path: '**/build/outputs/apk/debug/*.apk'
 
