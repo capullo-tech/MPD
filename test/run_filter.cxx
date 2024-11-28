@@ -3,6 +3,9 @@
 
 #include "ConfigGlue.hxx"
 #include "ReadFrames.hxx"
+#include "cmdline/OptionDef.hxx"
+#include "cmdline/OptionParser.hxx"
+#include "lib/fmt/AudioFormatFormatter.hxx"
 #include "lib/fmt/RuntimeError.hxx"
 #include "fs/Path.hxx"
 #include "fs/NarrowPath.hxx"
@@ -17,6 +20,7 @@
 #include "io/FileDescriptor.hxx"
 #include "util/StringBuffer.hxx"
 #include "util/PrintException.hxx"
+#include "LogBackend.hxx"
 
 #include <cassert>
 #include <memory>
@@ -24,7 +28,51 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
+
+struct CommandLine {
+	FromNarrowPath config_path;
+
+	const char *filter_name = nullptr;
+
+	AudioFormat audio_format{44100, SampleFormat::S16, 2};
+
+	bool verbose = false;
+};
+
+enum Option {
+	OPTION_VERBOSE,
+};
+
+static constexpr OptionDef option_defs[] = {
+	{"verbose", 'v', false, "Verbose logging"},
+};
+
+static CommandLine
+ParseCommandLine(int argc, char **argv)
+{
+	CommandLine c;
+
+	OptionParser option_parser(option_defs, argc, argv);
+	while (auto o = option_parser.Next()) {
+		switch (Option(o.index)) {
+		case OPTION_VERBOSE:
+			c.verbose = true;
+			break;
+		}
+	}
+
+	auto args = option_parser.GetRemaining();
+	if (args.size() < 2 || args.size() > 3)
+		throw std::runtime_error("Usage: run_filter CONFIG NAME [FORMAT] <IN");
+
+	c.config_path = args[0];
+	c.filter_name = args[1];
+
+	if (args.size() > 2)
+		c.audio_format = ParseAudioFormat(args[2], false);
+
+	return c;
+}
 
 static std::unique_ptr<PreparedFilter>
 LoadFilter(const ConfigData &config, const char *name)
@@ -40,24 +88,14 @@ LoadFilter(const ConfigData &config, const char *name)
 
 int main(int argc, char **argv)
 try {
-	if (argc < 3 || argc > 4) {
-		fprintf(stderr, "Usage: run_filter CONFIG NAME [FORMAT] <IN\n");
-		return EXIT_FAILURE;
-	}
-
-	const FromNarrowPath config_path = argv[1];
-
-	AudioFormat audio_format(44100, SampleFormat::S16, 2);
+	const auto c = ParseCommandLine(argc, argv);
+	SetLogThreshold(c.verbose ? LogLevel::DEBUG : LogLevel::INFO);
 
 	/* read configuration file (mpd.conf) */
 
-	const auto config = AutoLoadConfigFile(config_path);
+	const auto config = AutoLoadConfigFile(c.config_path);
 
-	/* parse the audio format */
-
-	if (argc > 3)
-		audio_format = ParseAudioFormat(argv[3], false);
-
+	auto audio_format = c.audio_format;
 	const size_t in_frame_size = audio_format.GetFrameSize();
 
 	/* initialize the filter */
@@ -69,9 +107,7 @@ try {
 	auto filter = prepared_filter->Open(audio_format);
 
 	const AudioFormat out_audio_format = filter->GetOutAudioFormat();
-
-	fprintf(stderr, "audio_format=%s\n",
-		ToString(out_audio_format).c_str());
+	fmt::print(stderr, "audio_format={}\n", out_audio_format);
 
 	/* play */
 
@@ -86,13 +122,14 @@ try {
 		if (nbytes == 0)
 			break;
 
-		auto dest = filter->FilterPCM(std::span{buffer}.first(nbytes));
-		output_fd.FullWrite(dest);
+		for (auto dest = filter->FilterPCM(std::span{buffer}.first(nbytes));
+		     !dest.empty(); dest = filter->ReadMore())
+			output_fd.FullWrite(dest);
 	}
 
 	while (true) {
 		auto dest = filter->Flush();
-		if (dest.data() == nullptr)
+		if (dest.empty())
 			break;
 		output_fd.FullWrite(dest);
 	}

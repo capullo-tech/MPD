@@ -10,18 +10,58 @@
 std::span<const std::byte>
 TwoFilters::FilterPCM(std::span<const std::byte> src)
 {
-	return second->FilterPCM(first->FilterPCM(src));
+	if (const auto dest = first->FilterPCM(src); dest.empty()) [[unlikely]]
+		/* no output from the first filter; pass the empty
+                   buffer on, do not call the second filter */
+		return dest;
+	else
+		/* pass output from the first filter to the second
+                   filter and return its result */
+		return second->FilterPCM(dest);
+}
+
+std::span<const std::byte>
+TwoFilters::ReadMore()
+{
+	assert(first);
+	assert(second);
+
+	/* first read all remaining data from the second filter */
+	if (auto result = second->ReadMore(); !result.empty())
+		return result;
+
+	/* now read more data from the first filter and process it
+           with the second filter */
+	if (auto result = first->ReadMore(); !result.empty())
+		/* output from the first Filter must be filtered by
+		   the second Filter */
+		return second->FilterPCM(result);
+
+	/* both filters have been queried and there's no more data */
+	return {};
 }
 
 std::span<const std::byte>
 TwoFilters::Flush()
 {
-	auto result = first->Flush();
-	if (result.data() != nullptr)
-		/* Flush() output from the first Filter must be
-		   filtered by the second Filter */
-		return second->FilterPCM(result);
+	assert(second);
 
+	/* first read all remaining data from the second filter */
+	if (auto result = second->ReadMore(); !result.empty())
+		return result;
+
+	/* now flush the first filter and process it with the second
+           filter */
+	if (first) {
+		if (auto result = first->Flush(); !result.empty())
+			/* output from the first Filter must be
+			   filtered by the second Filter */
+			return second->FilterPCM(result);
+
+		first.reset();
+	}
+
+	/* finally flush the second filter */
 	return second->Flush();
 }
 

@@ -41,17 +41,40 @@ public:
 	 * Throws on error.
 	 *
 	 * @param src the input buffer
-	 * @return the destination buffer on success (will be
-	 * invalidated by deleting this object or the next FilterPCM()
-	 * or Reset() call)
+	 * @return the output buffer (will be invalidated by deleting
+	 * this object or any call to Reset(), FilterPCM(), ReadMore()
+	 * or Flush()); may be empty if no output is currently
+	 * available
 	 */
 	virtual std::span<const std::byte> FilterPCM(std::span<const std::byte> src) = 0;
 
 	/**
-	 * Flush pending data and return it.  This should be called
-	 * repeatedly until it returns nullptr.
+	 * Read more result data from the filter.  After each
+	 * FilterPCM() call, this should be called repeatedly until it
+	 * returns an empty span.
 	 *
 	 * Throws on error.
+	 *
+	 * @return the output buffer (will be invalidated by deleting
+	 * this object or any call to Reset(), FilterPCM(), ReadMore()
+	 * or Flush()); may be empty if no output is currently
+	 * available
+	 */
+	virtual std::span<const std::byte> ReadMore() {
+		return {};
+	}
+
+	/**
+	 * Flush pending data and return it.  This should be called
+	 * repeatedly until it returns an empty span.
+	 *
+	 * After calling this method, this object cannot be used again
+         * (not even Reset() is allowed).
+	 *
+	 * Throws on error.
+	 *
+	 * @return pending data (will be invalidated by deleting this
+	 * object or by any call to Flush())
 	 */
 	virtual std::span<const std::byte> Flush() {
 		return {};

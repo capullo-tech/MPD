@@ -13,6 +13,7 @@
 
 #ifndef _WIN32
 #include <poll.h>
+#include <sys/uio.h> // for struct iovec
 #endif
 
 #ifndef O_NOCTTY
@@ -267,7 +268,7 @@ void
 FileDescriptor::FullRead(std::span<std::byte> dest) const
 {
 	while (!dest.empty()) {
-		ssize_t nbytes = Read(dest.data(), dest.size());
+		ssize_t nbytes = Read(dest);
 		if (nbytes <= 0) {
 			if (nbytes < 0)
 				throw MakeErrno("Failed to read");
@@ -282,7 +283,7 @@ void
 FileDescriptor::FullWrite(std::span<const std::byte> src) const
 {
 	while (!src.empty()) {
-		ssize_t nbytes = Write(src.data(), src.size());
+		ssize_t nbytes = Write(src);
 		if (nbytes <= 0) {
 			if (nbytes < 0)
 				throw MakeErrno("Failed to write");
@@ -294,6 +295,18 @@ FileDescriptor::FullWrite(std::span<const std::byte> src) const
 }
 
 #ifndef _WIN32
+
+ssize_t
+FileDescriptor::Read(std::span<const struct iovec> v) const noexcept
+{
+	return readv(fd, v.data(), v.size());
+}
+
+ssize_t
+FileDescriptor::Write(std::span<const struct iovec> v) const noexcept
+{
+	return writev(fd, v.data(), v.size());
+}
 
 int
 FileDescriptor::Poll(short events, int timeout) const noexcept

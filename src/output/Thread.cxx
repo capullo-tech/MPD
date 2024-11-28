@@ -207,7 +207,7 @@ AudioOutputControl::WaitForDelay(std::unique_lock<Mutex> &lock) noexcept
 	}
 }
 
-bool
+inline bool
 AudioOutputControl::FillSourceOrClose() noexcept
 try {
 	return source.Fill(mutex);
@@ -389,7 +389,7 @@ AudioOutputControl::InternalDrain() noexcept
 
 		while (true) {
 			auto buffer = source.Flush();
-			if (buffer.data() == nullptr)
+			if (buffer.empty())
 				break;
 
 			PlayFull(*output, buffer);

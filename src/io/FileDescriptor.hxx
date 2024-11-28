@@ -14,6 +14,7 @@
 #include <wchar.h>
 #endif
 
+struct iovec;
 class UniqueFileDescriptor;
 
 /**
@@ -246,11 +247,6 @@ public:
 		return ::read(fd, dest.data(), dest.size());
 	}
 
-	[[nodiscard]]
-	ssize_t Read(void *buffer, std::size_t length) const noexcept {
-		return ::read(fd, buffer, length);
-	}
-
 	/**
 	 * Read until all of the given buffer has been filled.  Throws
 	 * on error.
@@ -269,11 +265,6 @@ public:
 		return ::write(fd, src.data(), src.size());
 	}
 
-	[[nodiscard]]
-	ssize_t Write(const void *buffer, std::size_t length) const noexcept {
-		return ::write(fd, buffer, length);
-	}
-
 	/**
 	 * Write until all of the given buffer has been written.
 	 * Throws on error.
@@ -281,6 +272,18 @@ public:
 	void FullWrite(std::span<const std::byte> src) const;
 
 #ifndef _WIN32
+	/**
+	 * Wrapper for readv().
+	 */
+	[[nodiscard]]
+	ssize_t Read(std::span<const struct iovec> v) const noexcept;
+
+	/**
+	 * Wrapper for writev().
+	 */
+	[[nodiscard]]
+	ssize_t Write(std::span<const struct iovec> v) const noexcept;
+
 	[[nodiscard]]
 	int Poll(short events, int timeout) const noexcept;
 

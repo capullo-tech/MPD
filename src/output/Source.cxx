@@ -53,9 +53,9 @@ AudioOutputSource::Close() noexcept
 	assert(in_audio_format.IsValid());
 	in_audio_format.Clear();
 
-	Cancel();
-
 	CloseFilter();
+
+	Cancel();
 }
 
 void
@@ -74,7 +74,7 @@ AudioOutputSource::Cancel() noexcept
 		filter->Reset();
 }
 
-void
+inline void
 AudioOutputSource::OpenFilter(AudioFormat audio_format,
 			      PreparedFilter *prepared_replay_gain_filter,
 			      PreparedFilter *prepared_other_replay_gain_filter,
@@ -122,7 +122,7 @@ AudioOutputSource::GetChunkData(const MusicChunk &chunk,
 	assert(!chunk.IsEmpty());
 	assert(chunk.CheckFormat(in_audio_format));
 
-	std::span<const std::byte> data(chunk.data, chunk.length);
+	auto data = chunk.ReadData();
 
 	assert(data.size() % in_audio_format.GetFrameSize() == 0);
 
@@ -138,15 +138,19 @@ AudioOutputSource::GetChunkData(const MusicChunk &chunk,
 			*replay_gain_serial_p = chunk.replay_gain_serial;
 		}
 
+		/* note: the ReplayGainFilter doesn't have a
+		   ReadMore() method */
 		data = current_replay_gain_filter->FilterPCM(data);
 	}
 
 	return data;
 }
 
-std::span<const std::byte>
+inline std::span<const std::byte>
 AudioOutputSource::FilterChunk(const MusicChunk &chunk)
 {
+	assert(filter);
+
 	auto data = GetChunkData(chunk, replay_gain_filter.get(),
 				 &replay_gain_serial);
 	if (data.empty())
@@ -197,6 +201,8 @@ AudioOutputSource::FilterChunk(const MusicChunk &chunk)
 bool
 AudioOutputSource::Fill(Mutex &mutex)
 {
+	assert(filter);
+
 	if (current_chunk != nullptr && pending_tag == nullptr &&
 	    pending_data.empty())
 		DropCurrentChunk();
@@ -227,16 +233,24 @@ AudioOutputSource::Fill(Mutex &mutex)
 void
 AudioOutputSource::ConsumeData(size_t nbytes) noexcept
 {
+	assert(filter);
+
 	pending_data = pending_data.subspan(nbytes);
 
-	if (pending_data.empty())
-		DropCurrentChunk();
+	if (pending_data.empty()) {
+		/* give the filter a chance to return more data in
+		   another buffer */
+		pending_data = filter->ReadMore();
+
+		if (pending_data.empty())
+			DropCurrentChunk();
+	}
 }
 
 std::span<const std::byte>
 AudioOutputSource::Flush()
 {
-	return filter
-		? filter->Flush()
-		: std::span<const std::byte>{};
+	assert(filter);
+
+	return filter->Flush();
 }

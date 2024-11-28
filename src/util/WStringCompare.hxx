@@ -11,18 +11,17 @@
 #include <wchar.h>
 
 [[gnu::pure]] [[gnu::nonnull]]
-static inline bool
+static constexpr bool
 StringIsEmpty(const wchar_t *string) noexcept
 {
 	return *string == 0;
 }
 
 [[gnu::pure]]
-static inline bool
+static constexpr bool
 StringIsEqual(std::wstring_view a, std::wstring_view b) noexcept
 {
-	return a.size() == b.size() &&
-		StringIsEqual(a.data(), b.data(), b.size());
+	return a == b;
 }
 
 [[gnu::pure]]
